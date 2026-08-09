@@ -1,27 +1,57 @@
 #!/bin/bash
-# CCFM Claude Code Skills 자동 설치 스크립트
-# 교육용 스킬을 설치합니다 (기본판: WebSearch만, Vercel 배포 없음)
+# CCFM 교육용 스킬 설치
+#
+#   bash install.sh
+#
+# 설치 후 Claude Code 를 다시 켜고 / 를 누르면 목록에 나타납니다.
 
-echo "📦 CCFM 스킬 설치를 시작합니다..."
+set -e
+DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# commands 폴더 생성
-mkdir -p ~/.claude/commands
+# 안전장치 — 이 스킬들의 원본을 만드는 기기에서는 실행하지 않는다.
+# 교육판이 원본을 덮어쓰면 되돌릴 수 없다.
+if [ -f "$HOME/scripts/export-skills.sh" ] || [ -d "$DIR/overrides" ]; then
+  if [ "${I_KNOW_WHAT_IM_DOING:-}" != "1" ]; then
+    echo "여기는 스킬 원본을 관리하는 기기로 보입니다."
+    echo "설치하면 ~/.claude/skills/ 의 원본이 교육판으로 덮어써집니다."
+    echo
+    echo "정말 설치하려면:  I_KNOW_WHAT_IM_DOING=1 bash install.sh"
+    exit 1
+  fi
+fi
 
-# 스크립트가 있는 디렉토리 찾기
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+mkdir -p ~/.claude/skills ~/.claude/commands
+BACKUP="$HOME/.claude/skills-backup-$(date +%Y%m%d-%H%M%S)"
 
-# 교육용 스킬 파일 복사
-cp "$SCRIPT_DIR"/education/*.md ~/.claude/commands/
+echo "CCFM 스킬을 설치합니다."
+echo
 
-echo "✅ 설치 완료!"
-echo ""
-echo "설치된 스킬:"
-ls -1 ~/.claude/commands/*.md 2>/dev/null | while read f; do
-  echo "  /$(basename "$f" .md)"
+n=0
+for d in "$DIR"/education/*/; do
+  [ -d "$d" ] || continue
+  name="$(basename "$d")"
+  if [ -d "$HOME/.claude/skills/$name" ]; then
+    mkdir -p "$BACKUP"
+    mv "$HOME/.claude/skills/$name" "$BACKUP/$name"
+  fi
+  cp -R "$d" "$HOME/.claude/skills/$name"
+  echo "  /$name"
+  n=$((n+1))
 done
-echo ""
-echo "Claude Code에서 / 입력 후 스킬을 사용하세요."
-echo ""
-echo "💡 스킬 커스텀 가이드:"
-echo "  - Gemini API 교차검증 추가 → 매뉴얼 참조"
-echo "  - Vercel 자동 배포 추가 → 매뉴얼 참조"
+
+for f in "$DIR"/education/*.md; do
+  [ -e "$f" ] || continue
+  name="$(basename "$f" .md)"
+  if [ -f "$HOME/.claude/commands/$name.md" ]; then
+    mkdir -p "$BACKUP"
+    mv "$HOME/.claude/commands/$name.md" "$BACKUP/$name.md"
+  fi
+  cp "$f" "$HOME/.claude/commands/$name.md"
+  echo "  /$name"
+  n=$((n+1))
+done
+
+echo
+echo "설치 완료 — ${n}개."
+[ -d "$BACKUP" ] && echo "기존 파일은 $BACKUP 에 옮겨 뒀습니다."
+echo "Claude Code 를 다시 켜고 / 를 눌러 확인하세요."

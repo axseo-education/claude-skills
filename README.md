@@ -1,44 +1,49 @@
-# CCFM Claude Code Skills
+# CCFM 교육용 스킬
 
-CCFM AI 스터디에서 사용하는 Claude Code 커스텀 스킬 모음입니다.
+CCFM AI 스터디에서 쓰는 Claude Code 스킬 모음입니다.
+사내 서버·API 키 없이 **직원 PC 단독으로 도는 것만** 담았습니다.
 
-## 폴더 구조
-
-```
-education/     ← 교육용 (기본판: WebSearch만, Vercel 배포 없음)
-personal/      ← 개인용 (고급: Gemini 교차검증 + Vercel 자동 배포)
-```
-
-## 교육용 스킬 설치
+## 설치
 
 ```bash
 git clone https://github.com/axseo-education/claude-skills.git
 bash claude-skills/install.sh
 ```
 
+설치 후 Claude Code 를 다시 켜고 `/` 를 누르면 목록에 나타납니다.
+
 ## 포함된 스킬
 
+<!-- AUTO:SKILLS -->
 | 스킬 | 설명 |
 |------|------|
-| `/cardnews` | 카드뉴스 자동 제작 (리서치 → 기획 → HTML → PNG) |
-| `/viz` | 데이터 시각화 (대시보드, 인포그래픽, 슬라이드 등) |
-| `/landing` | 랜딩페이지 자동 제작 |
-| `/competitor` | 경쟁사 분석 리포트 |
-| `/ad-copy` | 광고 카피 생성기 |
-
-## 스킬 커스텀 (단계별)
-
-### Step 1: Gemini API 교차검증 추가
-1. [Google AI Studio](https://aistudio.google.com)에서 API 키 발급
-2. 환경변수 설정: `GEMINI_API_KEY`
-3. gemini-tools 설치: `git clone https://github.com/axseo-education/gemini-tools.git ~/gemini-tools`
-4. 스킬 파일에 Gemini 검증 단계 추가 (매뉴얼 참조)
-
-### Step 2: Vercel 자동 배포 추가
-1. `npm install -g vercel`
-2. `vercel login`
-3. 스킬 파일에 배포 단계 추가 (매뉴얼 참조)
+| `/copy` | 매체 불문 고성과 카피 생성 — 프레임워크·후크·심리트리거·채점을 거쳐 변형 3안을 뽑는다. |
+| `/critique` | 결과물 1개 다각도 비평 + PM 머지. N명 워커 병렬. 트리거 |
+| `/sketch` | 손그림 개념 일러스트 — 인라인 SVG + rough 필터 + Gaegu 라벨. 텍스트는 클린, 그림만 손그림(하이브리드). 트리거 — 손그림, 스케치 일러스트, 개념 다이어그램, 일러 넣어줘, 그림으로 설명. |
+| `/design` | (교육용 판본) |
+| `/recap` | (교육용 판본) |
+<!-- /AUTO:SKILLS -->
 
 ## 매뉴얼
-- [커리큘럼 로드맵](https://ccfm-viz-curriculum-roadmap.vercel.app)
-- [M1. 시작하기](https://ccfm-m1-concept.vercel.app)
+
+사용법은 [CCFM AI 스터디](https://ccfm-ai-study.vercel.app) 에서 확인하세요.
+
+---
+
+## 관리자용
+
+이 폴더는 **직접 고치지 않습니다.** 정본은 관리자 기기의 `~/.claude/skills/` 이고,
+`export-skills.sh` 가 `export.manifest` 를 읽어 여기로 내보냅니다.
+
+```bash
+bash ~/scripts/export-skills.sh          # 내보내기 + 검사만
+bash ~/scripts/export-skills.sh --push   # 커밋 + GitHub 반영
+```
+
+스크립트가 매번 검사하는 것:
+
+- **대외비** — 사내 브랜드명·실명·고객사가 섞였는지
+- **인프라 의존** — 직원 PC 에 없는 서버·키·경로를 참조하는지
+- **명세 이탈** — `export.manifest` 에 없는 것이 남아 있는지 (있으면 `archive/` 로 옮김)
+
+직원에게 새 스킬을 주려면 `export.manifest` 에 한 줄 추가하고 다시 돌리면 됩니다.

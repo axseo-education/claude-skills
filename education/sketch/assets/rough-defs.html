@@ -1,0 +1,7 @@
+<!-- 손그림 필터 정의 — <body> 바로 뒤에 문서당 1회 삽입 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="rough">
+    <feTurbulence type="fractalNoise" baseFrequency="0.014" numOctaves="2" seed="7" result="t"/>
+    <feDisplacementMap in="SourceGraphic" in2="t" scale="3.6" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</defs></svg>
