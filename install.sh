@@ -6,7 +6,17 @@
 # 설치 후 Claude Code 를 다시 켜고 / 를 누르면 목록에 나타납니다.
 
 set -e
-DIR="$(cd "$(dirname "$0")" && pwd)"
+DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo "")"
+
+# curl | bash 로 실행되면 스크립트 옆에 education 이 없다. 그때는 ZIP 을 받아 쓴다 (git 불필요).
+if [ -z "$DIR" ] || [ ! -d "$DIR/education" ]; then
+  TMP="$(mktemp -d)"
+  echo "스킬을 내려받는 중..."
+  curl -fsSL https://github.com/axseo-education/claude-skills/archive/refs/heads/master.zip -o "$TMP/repo.zip"
+  ( cd "$TMP" && unzip -q repo.zip )
+  DIR="$TMP/claude-skills-master"
+  trap 'rm -rf "$TMP"' EXIT
+fi
 
 # 안전장치 — 이 스킬들의 원본을 만드는 기기에서는 실행하지 않는다.
 # 교육판이 원본을 덮어쓰면 되돌릴 수 없다.

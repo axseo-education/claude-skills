@@ -5,9 +5,20 @@ CCFM AI 스터디에서 쓰는 Claude Code 스킬 모음입니다.
 
 ## 설치
 
+가장 쉬운 방법은 Claude Code 에게 시키는 것입니다.
+
+```
+https://github.com/axseo-education/claude-skills 여기 있는 스킬 설치해줘.
+```
+
+직접 하려면 — **Mac / Linux**
 ```bash
-git clone https://github.com/axseo-education/claude-skills.git
-bash claude-skills/install.sh
+curl -fsSL https://raw.githubusercontent.com/axseo-education/claude-skills/master/install.sh | bash
+```
+
+**Windows** (git·bash 없어도 됩니다)
+```powershell
+irm https://raw.githubusercontent.com/axseo-education/claude-skills/master/install.ps1 | iex
 ```
 
 설치 후 Claude Code 를 다시 켜고 `/` 를 누르면 목록에 나타납니다.
