@@ -16,6 +16,9 @@
 #            대신 원본이 바뀌면 "재검토 필요" 경고를 띄웁니다. 경고가 뜰 때만 손보면 됩니다.
 
 copy       auto    trend_engine.md library-query.md references RUBRIC.md
+competitor auto    references
+# ↑ 진입 파일은 overrides/competitor/SKILL.md (검색·로컬 파일만 쓰는 교육용 판본).
+#   references/ 는 특정 고객 브랜드로 짜인 대시보드 예시라 제외합니다.
 # sketch  — 제외. python3·캡처 의존 + 사용 빈도 낮음
 # naming   — 제외. 준석 취향 판정 기록·미출시 네이밍 후보 포함 + naming-lab/calibration.md 의존
 # critique — 제외. _shared/lib/critique-core.md 참조가 깨짐. 07b 에서 프롬프트로 가르침

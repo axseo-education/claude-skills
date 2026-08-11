@@ -28,6 +28,7 @@ irm https://raw.githubusercontent.com/axseo-education/claude-skills/master/insta
 <!-- AUTO:SKILLS -->
 | 스킬 | 설명 |
 |------|------|
+| `/competitor` | 경쟁사 분석 Step 워크플로우 — 리서치 → 분석 프레임 → 대시보드 → 공유 패키지를 순서대로 실행한다. |
 | `/copy` | 매체 불문 고성과 카피 생성 — 프레임워크·후크·심리트리거·채점을 거쳐 변형 3안을 뽑는다. |
 | `/design` | (교육용 판본) |
 <!-- /AUTO:SKILLS -->
