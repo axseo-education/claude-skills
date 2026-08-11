@@ -12,7 +12,7 @@ description: 경쟁사 분석 — 검색량·광고·리뷰·커뮤니티를 모
 ```
 
 교육용 판본입니다. **직원 PC 에서 Claude Code 만으로 완주**하도록 구성했습니다.
-사내 서버·크롤러는 쓰지 않고, 필요한 도구는 아래 준비 단계에서 직접 설치합니다.
+필요한 도구는 아래 준비 단계에서 직접 설치하며, 전부 이 PC 안에서 돕니다.
 
 산출물은 **7개 섹션 대시보드 HTML 한 장**입니다. 섹션 순서는 고정입니다.
 
@@ -58,8 +58,11 @@ DATALAB_CLIENT_SECRET=
 EOF
 ```
 
-키가 없으면 **01 섹션을 만들 수 없다.** 그때는 키 없이 진행할지 사용자에게 묻고,
-진행한다면 01 섹션을 빼고 6개 섹션으로 내되 **뺐다는 사실을 결과에 적는다.**
+**키가 없으면 브랜드를 자동으로 찾을 수 없다.** 검색량이 후보 필터의 1차 관문이기 때문이다.
+그때는 **자동 탐색을 하지 않고**, 사용자가 비교 브랜드를 직접 지정해야 진행한다.
+
+키 없이 진행하는 경우에도 **01 섹션을 빼지 않는다.** 섹션은 그대로 두고 `자료 없음`으로 채운 뒤,
+왜 비었는지(키 미발급) 그 자리에 적는다. 7개 섹션 구조는 어떤 경우에도 깨지 않는다.
 
 ---
 
@@ -85,15 +88,20 @@ EOF
 
 경쟁사는 "같은 걸 파는 곳"이 아니라 **"같은 방식으로 같은 고객을 두고 다투는 곳"**이다.
 
-| 조건 | 왜 | 뺄 예 |
-|------|-----|-------|
-| **검색량이 같은 밴드인가** | 규모가 다르면 예산 단위가 달라 배울 게 없다 | 대기업 계열, 전국 매스 광고 브랜드 |
-| **온라인 광고를 돌리고 있는가** | 광고를 안 하면 비교할 소재가 없다 | 유통 입점 위주 브랜드 |
-| **꾸준히 집행하는가** | 한 달 몰아 태운 건 브랜드 캠페인이지 퍼포먼스가 아니다 | 런칭 때 한 번만 태운 곳 |
-| **오프라인·홈쇼핑 전용이 아닌가** | 볼 수 있는 소재가 안 나온다 | TV홈쇼핑만 하는 브랜드 |
+**숫자로 자른다.** 느낌으로 고르면 돌릴 때마다 다른 경쟁사가 나온다.
 
-**검색량 밴드가 1차 관문이고 광고 수가 2차다.** 검색량이 기준 브랜드와 자릿수가 다르면
-광고를 아무리 많이 돌려도 비교 대상이 아니다.
+| 순위 | 조건 | 기준 (그대로 적용) | 왜 |
+|------|------|-------------------|-----|
+| **1** | 파생 키워드 **합산** 검색량 | **5,000 ~ 50,000** | 5,000 미만은 인지도 부족, 50,000 초과는 규모 상이 |
+| **2** | 메타 활성 광고 수 | **50건 이상** | 20건 미만은 브랜딩 한 번 돌린 수준 |
+| **3** | 사용자가 직접 지정한 브랜드 | **1·2를 못 넘어도 포함** | "이 브랜드와 비교해줘"는 그대로 따른다 |
+| 4 | 게재 시작월 분산 | **2개월 이상** | 한 달 몰아 태운 건 캠페인 버스트지 퍼포먼스가 아니다 |
+| 5 | 자사몰 보유 | 있음 | 랜딩을 봐야 전환 구조가 보인다 |
+| 6 | 디지털 광고 집행 | 하는 중 | 홈쇼핑·오프라인 전용은 볼 소재가 없다 |
+
+**1번이 2번보다 먼저다.** 검색량 밴드를 벗어나면 광고를 아무리 많이 돌려도 탈락이다.
+검색량은 **브랜드명 단독이 아니라 파생 키워드 합산**으로 센다
+("브랜드명"보다 "브랜드명 + 대표제품명"이 훨씬 높은 경우가 흔하다).
 
 통과 못 한 곳은 **왜 뺐는지 한 줄로 적어** 사용자에게 보여준다. 조용히 빼지 않는다.
 
@@ -150,17 +158,33 @@ async function keywordTool(seed) {
   return (await res.json()).keywordList || [];
 }
 
-function num(v) { return typeof v === 'number' ? v : parseInt(String(v).replace(/[^0-9]/g, ''), 10) || 0; }
+// 네이버는 검색량이 10 미만이면 숫자 대신 "< 10" 을 준다.
+// 이걸 10 으로 읽으면 합산이 부풀고 5,000 하한 통과 판정이 틀어진다. null 로 남긴다.
+function num(v) {
+  if (typeof v === 'number') return v;
+  var t = String(v).trim();
+  if (t.indexOf('<') === 0) return null;      // "< 10" = 자료 없음
+  var n = parseInt(t.replace(/[^0-9]/g, ''), 10);
+  return isNaN(n) ? null : n;
+}
 
 var out = {};
 for (var brand of process.argv.slice(2)) {
   var list = await keywordTool(brand);
   var rows = list
     .filter(function (k) { return k.relKeyword.replace(/\s/g, '').includes(brand.replace(/\s/g, '')); })
-    .map(function (k) { return { keyword: k.relKeyword, volume: num(k.monthlyPcQcCnt) + num(k.monthlyMobileQcCnt) }; })
-    .sort(function (a, b) { return b.volume - a.volume; });
-  out[brand] = { total: rows.reduce(function (s, r) { return s + r.volume; }, 0), keywords: rows.slice(0, 20) };
-  console.log(brand, '합산', out[brand].total, '· 파생 키워드', rows.length);
+    .map(function (k) {
+      var pc = num(k.monthlyPcQcCnt), mo = num(k.monthlyMobileQcCnt);
+      var known = pc === null && mo === null ? null : (pc || 0) + (mo || 0);
+      return { keyword: k.relKeyword, volume: known, source: known === null ? 'no_data' : 'searchad_api' };
+    })
+    .sort(function (a, b) { return (b.volume || 0) - (a.volume || 0); });
+  var counted = rows.filter(function (r) { return r.volume !== null; });
+  out[brand] = {
+    total: counted.reduce(function (s, r) { return s + r.volume; }, 0),
+    counted: counted.length, no_data: rows.length - counted.length,
+    keywords: rows.slice(0, 20) };
+  console.log(brand, '합산', out[brand].total, '· 집계', counted.length, '· 자료없음', out[brand].no_data);
 }
 fs.writeFileSync(new URL('volumes.json', import.meta.url), JSON.stringify(out, null, 2));
 ```
@@ -193,8 +217,16 @@ for (var g of data.results) console.log(g.title, g.data.map(function (d) { retur
 **기간 규칙** — 직전 연도의 **1월~12월 전체**를 쓴다. 시즌성을 보려는 것이므로
 "최근 12개월 롤링"은 쓰지 않는다. 2026년에 돌리면 2025-01-01 ~ 2025-12-31.
 
-데이터랩은 **상대값(0~100)**이라 그 자체가 검색량이 아니다. 절대 검색량은 검색광고 API 값을 쓰고,
-데이터랩은 **월별 오르내림 모양**에만 쓴다.
+**데이터랩 값은 상대지수(0~100)라 그 자체가 검색량이 아니다.** 차트에 그대로 올리면
+축 단위가 거짓이 된다. 아래 둘 중 하나만 한다.
+
+- **(권장) 추정 검색량으로 환산** — 브랜드마다
+  `그 달 값 = 검색광고 월간 검색량 × (그 달 상대값 ÷ 그 브랜드 12개월 상대값 평균)`.
+  차트 부제는 `네이버 월간 추정 검색량 기준`
+- **환산하지 않으려면** 차트 부제를 `상대지수 (0~100)` 이라고 **명시**한다.
+  이때는 브랜드 간 절대 크기를 비교하지 말라는 주석을 붙인다
+
+`trend.json` 과 `volumes.json` 을 같이 읽어 환산한다. **둘 중 하나가 없으면 환산하지 않는다.**
 
 ### 1-B. 광고 (섹션 04 재료)
 
@@ -224,10 +256,26 @@ for (var q of names) {
       var dates = [...t.matchAll(/(\d{4})\.\s*(\d{1,2})\.\s*\d{1,2}\.\s*에 게재 시작함/g)]
         .map(function (m) { return m[1] + '-' + String(m[2]).padStart(2, '0'); });
       var months = {}; for (var d of dates) months[d] = (months[d] || 0) + 1;
-      var copy = [...new Set(t.split('\n').map(function (s) { return s.trim(); })
-        .filter(function (l) { return l.length >= 12 && l.length <= 90 &&
-          !/라이브러리 ID|게재 시작함|광고 상세|드롭다운|플랫폼|활성|검색|필터|정렬|Meta/.test(l); }))].slice(0, 20);
-      return { count: count, sampled: dates.length, months: months, copy: copy };
+      // 카피는 페이지 전체가 아니라 광고 카드 안에서만 뽑는다.
+      // 전체 innerText 를 긁으면 안내문·필터 문구·다른 광고주 텍스트가 섞인다.
+      // "라이브러리 ID" 텍스트에서 위로 올라가며 본문이 담긴 최소 카드 컨테이너를 찾는다.
+      var cards = [];
+      for (var el of document.querySelectorAll('div, span')) {
+        if (!/라이브러리 ID/.test(el.textContent || '')) continue;
+        if ([...el.children].some(function (c) { return /라이브러리 ID/.test(c.textContent || ''); })) continue;
+        var node = el;
+        while (node && (node.innerText || '').length < 80) node = node.parentElement;
+        if (node && (node.innerText || '').length <= 2500 && cards.indexOf(node) === -1) cards.push(node);
+      }
+      var noise = /라이브러리 ID|게재 시작함|광고 상세|드롭다운|플랫폼|^활성$|이 크리에이티브|페이지는|더 보기|Sponsored/;
+      var copy = [];
+      for (var card of cards) {
+        for (var line of (card.innerText || '').split('\n').map(function (x) { return x.trim(); })) {
+          if (line.length >= 12 && line.length <= 90 && !noise.test(line)) copy.push(line);
+        }
+      }
+      copy = [...new Set(copy)].slice(0, 20);
+      return { count: count, sampled: dates.length, months: months, cards: cards.length, copy: copy };
     });
     console.log(JSON.stringify({ brand: q, ...r }, null, 1));
   } catch (e) { console.log(JSON.stringify({ brand: q, error: e.message.slice(0, 80) })); }
@@ -236,7 +284,8 @@ await browser.close();
 ```
 
 읽는 법 — `count`는 후보 간 **상대 비교**용, `months`는 **여러 달에 퍼지면 상시 / 한 달에 몰리면 버스트**,
-`copy`는 섹션 04 카피 카드의 재료다.
+`copy`는 섹션 04 카피 카드의 재료다(광고 카드 안에서만 뽑는다). `cards`가 0이면 카피를 못 건진 것이니
+**카피 카드를 지어내지 말고** 그 사실을 적는다.
 
 **단서를 반드시 남긴다.** 이 검색은 브랜드명이 들어간 광고를 넓게 잡아 제휴·리셀러가 섞인다.
 모든 후보에 같은 방식을 썼으므로 상대 비교는 유효하지만 절대 건수는 **상한**이다.
@@ -302,6 +351,10 @@ await browser.close();
 - 브랜드별 포지셔닝 카드 — 포지셔닝 / 강점 / 약점. 긴 문단 금지, 불릿으로
 - 비교 테이블 — 핵심 기술 · 가격대 · 유통 · 타겟 · 광고 강도
 - 인사이트 카드 2개 — 제품 포지셔닝 / 차별화 지점
+- **VOC 4분류 카드 (4열)** — 고객이 망설이는 이유를 네 갈래로 나누고
+  **각 칸에 실제 고객 문장을 그대로 인용**한다. 요약하지 말고 원문으로 붙인다.
+  (예: 가격 저항 / 효과 의심 / 사용 번거로움 / 부작용 우려 — 카테고리에 맞게 정한다)
+- **임팩트 박스 — USP 한 문장.** 위 전부를 한 줄로 압축한다
 
 ### 03. 타겟 페르소나
 
@@ -309,6 +362,8 @@ await browser.close();
 - 각각 **Pain → Desire → Solution** 순서
 - Solution 은 **기준 브랜드 제품으로만** 쓴다. 경쟁사 제품을 해결책에 넣지 않는다
 - Solution 은 제품명 나열이 아니라 **"그 Pain 을 어떻게 푸는가"**를 쓴다
+- **USP 매칭** — 페르소나마다 어느 USP 가 걸리는지 표시한다. 안 걸리는 페르소나가 있으면
+  그것도 그대로 둔다 (우리가 아직 못 잡는 층이라는 뜻이다)
 - 근거는 1-C 의 리뷰·키워드다. 지어내지 않는다
 
 ### 04. 크리에이티브
@@ -329,18 +384,19 @@ await browser.close();
 - **경쟁사 불만 → 기준 브랜드 기회 앵글 3카드** (이 섹션의 핵심)
   - 기준 브랜드: 카테고리 공통 불만
   - 경쟁사 A·B: 그 브랜드 고유 불만 → 기준 브랜드가 잡을 각도
+- **임팩트 박스 — "경쟁사가 잃은 고객 → 우리 기회"** 를 한 문장으로
 
 ### 06. 전략적 시사점
 
-- **SWOT 2×2 그리드**, 칸마다 3개씩
+- **SWOT 2×2 그리드**, 칸마다 최대 3개 (근거를 통과한 것만)
 - 각 항목은 `S1.` `W2.` 번호 + 항목명 + 설명
 - 서술형으로 쓴다. 여기서 숫자를 다시 늘어놓지 않는다
 
 ### 07. 종합 요약
 
-- **핵심 승부처 3가지** — 큰 숫자나 짧은 문구 + 설명
-- **지금 당장 가능한 것 3가지**
-- **반드시 주의할 것 3가지**
+- **핵심 승부처** 최대 3가지 — 큰 숫자나 짧은 문구 + 설명
+- **지금 당장 가능한 것** 최대 3가지
+- **반드시 주의할 것** 최대 3가지
 
 ---
 
@@ -353,11 +409,41 @@ await browser.close();
 - 같은 내용을 표와 차트로 두 번
 - 실행 계획·매체 플랜 (이 스킬의 일이 아니다)
 
+## 해석은 낸다. 단 이 리포트 안의 데이터에 뿌리내려야 한다
+
+해석·시사점·페르소나·요약은 **빼지 않는다.** 문제는 섹션의 존재가 아니라 근거 없는 내용이다.
+아래 세 가지만 걸러낸다.
+
+**금지 1 — 관측되지 않은 인과.** 비중이나 상관을 원인으로 단정하지 않는다.
+> "브랜드명 검색이 70%다 → 광고로 만들어진 인지다 → 광고를 줄이면 검색도 준다"
+> 검색 구성비는 *비중*만 보여준다. 광고 때문인지 카테고리 특성인지 이 데이터로는 모른다.
+
+**금지 2 — 일반론.** 이 브랜드를 조사하지 않았어도 쓸 수 있는 말.
+> "지명 검색이 약하니 카테고리 키워드를 먼저 확보"
+> 어느 후발 브랜드에나 그대로 붙는다. 게다가 "카테고리 키워드가 더 얻기 쉽다"는 전제부터 검증되지 않았다.
+
+**금지 3 — 완충어로 감싼 단정.** "~로 보입니다"를 붙여도 관측 밖 주장이면 금지다.
+**완충어는 근거를 만들지 않는다.**
+
+### 통과 기준 — 해석 하나당 세 문항
+
+1. 뒷받침하는 **이 리포트의 구체 수치·관측**을 댈 수 있는가?
+2. **그 근거를 지우면 무너지는가?** 안 무너지면 일반론이다 → 뺀다
+3. 경쟁사 대비 **우리만 쓸 수 있는** 이유가 있는가?
+
+> 문장 단위 자가 점검 — **"이 문장을 부정하려면 어떤 데이터가 필요한가? 그게 이 리포트에 있는가?"**
+> 없으면 뺀다.
+
+### 개수를 채우려 하지 마라
+
+**위 섹션들의 "3개"는 상한이지 할당량이 아니다.** 기준을 통과한 것만 남긴다.
+2개면 2개로 내고, 왜 적은지 한 줄 적는다.
+**빈칸을 메우려다 일반론이 끼어드는 것이 이 리포트의 주된 실패 양상이다.**
+
 ## 톤
 
-- **가설 기반** — "~로 보입니다", "~를 검토해볼 수 있습니다", "~일 가능성이 있습니다"
+- **가설 기반** — "~로 보입니다", "~를 검토해볼 수 있습니다"
 - 읽는 사람이 이 카테고리를 처음 볼 수도 있다고 가정한다
-- 근거 없는 해석을 쓰지 않는다. 모든 해석은 위에서 모은 데이터에 닿아 있어야 한다
 
 ## 기술 요구사항
 
