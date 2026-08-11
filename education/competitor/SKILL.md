@@ -134,7 +134,14 @@ EOF
 
 ```bash
 cd ~/competitor-tools && node volume.mjs "브랜드A" "브랜드B" "브랜드C"
+
+# 대표 제품명이 따로 있으면 = 뒤에 붙인다 (쉼표로 여러 개)
+node volume.mjs "브랜드A=대표제품,서브라인" "브랜드B"
 ```
+
+**제품명을 안 붙이면 검색량이 크게 과소집계된다.** 브랜드명보다 제품명 검색이 많은 경우가 흔하다
+("헤어리듬" 보다 "헤어리듬 루트너" 가 훨씬 높은 식). **집계된 파생 키워드가 1~2개뿐이면
+거의 확실히 빠진 것이 있다** — 자사몰에서 대표 제품명을 확인해 다시 돌린다.
 
 `~/competitor-tools/volume.mjs` 로 저장할 스크립트:
 
@@ -149,17 +156,31 @@ for (var line of fs.readFileSync(new URL('.env', import.meta.url), 'utf8').split
   if (i > 0) env[line.slice(0, i).trim()] = line.slice(i + 1).trim();
 }
 
+function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+// 검색광고 API 는 호출이 몰리면 429 를 준다. 씨앗이 늘수록 호출도 늘어난다.
+// 사이를 띄우고, 429 면 기다렸다 다시 친다.
 async function keywordTool(seed) {
-  var ts = String(Date.now());
-  var path = '/keywordstool';
-  var sig = createHmac('sha256', env.SEARCHAD_SECRET).update(ts + '.GET.' + path).digest('base64');
-  var url = 'https://api.searchad.naver.com' + path + '?hintKeywords=' +
-            encodeURIComponent(seed) + '&showDetail=1';
-  var res = await fetch(url, { headers: {
-    'X-Timestamp': ts, 'X-API-KEY': env.SEARCHAD_API_KEY,
-    'X-Customer': env.SEARCHAD_CUSTOMER_ID, 'X-Signature': sig } });
-  if (!res.ok) throw new Error('searchad ' + res.status + ' ' + (await res.text()).slice(0, 120));
-  return (await res.json()).keywordList || [];
+  for (var attempt = 0; attempt < 4; attempt++) {
+    var ts = String(Date.now());
+    var path = '/keywordstool';
+    var sig = createHmac('sha256', env.SEARCHAD_SECRET).update(ts + '.GET.' + path).digest('base64');
+    var url = 'https://api.searchad.naver.com' + path + '?hintKeywords=' +
+              encodeURIComponent(seed) + '&showDetail=1';
+    var res = await fetch(url, { headers: {
+      'X-Timestamp': ts, 'X-API-KEY': env.SEARCHAD_API_KEY,
+      'X-Customer': env.SEARCHAD_CUSTOMER_ID, 'X-Signature': sig } });
+    if (res.status === 429) {
+      var wait = 3000 * (attempt + 1);
+      console.log('  호출 제한(429) — ' + (wait / 1000) + '초 쉬었다 다시 시도합니다');
+      await sleep(wait);
+      continue;
+    }
+    if (!res.ok) throw new Error('searchad ' + res.status + ' ' + (await res.text()).slice(0, 120));
+    await sleep(1200);                       // 다음 호출까지 간격
+    return (await res.json()).keywordList || [];
+  }
+  throw new Error('searchad 429 — 호출 제한이 계속됩니다. 몇 분 뒤 다시 돌리세요.');
 }
 
 // 네이버는 검색량이 10 미만이면 숫자 대신 "< 10" 을 준다.
@@ -173,11 +194,22 @@ function num(v) {
   return isNaN(n) ? null : n;
 }
 
+function norm(x) { return x.replace(/\s/g, ''); }
+
 var out = {};
-for (var brand of process.argv.slice(2)) {
-  var list = await keywordTool(brand);
+for (var arg of process.argv.slice(2)) {
+  // "브랜드=제품1,제품2" — 제품명도 씨앗으로 넣어야 실제 검색량이 잡힌다.
+  var parts = arg.split('=');
+  var brand = parts[0];
+  var seeds = [brand].concat((parts[1] || '').split(',').filter(Boolean));
+  var list = [];
+  for (var seed of seeds) list = list.concat(await keywordTool(seed));
+  var seen = {};
+  list = list.filter(function (k) {
+    if (seen[k.relKeyword]) return false; seen[k.relKeyword] = 1; return true; });
   var rows = list
-    .filter(function (k) { return k.relKeyword.replace(/\s/g, '').includes(brand.replace(/\s/g, '')); })
+    .filter(function (k) {
+      return seeds.some(function (sd) { return norm(k.relKeyword).includes(norm(sd)); }); })
     .map(function (k) {
       var pc = num(k.monthlyPcQcCnt), mo = num(k.monthlyMobileQcCnt);
       if (pc === null && mo === null) return { keyword: k.relKeyword, volume: null, _source: 'no_data' };
@@ -197,6 +229,7 @@ for (var brand of process.argv.slice(2)) {
     keywords: rows.slice(0, 20) };
   console.log(brand, '합산', out[brand].total === null ? '판정불가(자료없음)' : out[brand].total,
               '· 집계', counted.length, '· 부분', out[brand].partial, '· 자료없음', out[brand].no_data);
+  if (counted.length <= 2) console.log('  ⚠ 파생 키워드가 너무 적습니다. 대표 제품명을 = 뒤에 붙여 다시 돌리세요.');
 }
 fs.writeFileSync(new URL('volumes.json', import.meta.url), JSON.stringify(out, null, 2));
 ```
