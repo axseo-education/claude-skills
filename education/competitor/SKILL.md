@@ -164,6 +164,7 @@ async function keywordTool(seed) {
 
 // 네이버는 검색량이 10 미만이면 숫자 대신 "< 10" 을 준다.
 // 이걸 10 으로 읽으면 합산이 부풀고 5,000 하한 통과 판정이 틀어진다. null 로 남긴다.
+// total 이 null 이면 "검색량이 0" 이 아니라 "판정 불가" 다. 필터를 적용하지 말고 사용자에게 알린다.
 function num(v) {
   if (typeof v === 'number') return v;
   var t = String(v).trim();
@@ -179,16 +180,23 @@ for (var brand of process.argv.slice(2)) {
     .filter(function (k) { return k.relKeyword.replace(/\s/g, '').includes(brand.replace(/\s/g, '')); })
     .map(function (k) {
       var pc = num(k.monthlyPcQcCnt), mo = num(k.monthlyMobileQcCnt);
-      var known = pc === null && mo === null ? null : (pc || 0) + (mo || 0);
-      return { keyword: k.relKeyword, volume: known, source: known === null ? 'no_data' : 'searchad_api' };
+      if (pc === null && mo === null) return { keyword: k.relKeyword, volume: null, _source: 'no_data' };
+      // 한쪽만 "< 10" 이면 그 쪽을 0 으로 세되 partial 로 표시한다 (최대 9 만큼 과소집계).
+      var partial = pc === null || mo === null;
+      return { keyword: k.relKeyword, volume: (pc || 0) + (mo || 0),
+               _source: partial ? 'partial' : 'searchad_api' };
     })
     .sort(function (a, b) { return (b.volume || 0) - (a.volume || 0); });
   var counted = rows.filter(function (r) { return r.volume !== null; });
+  // 집계 가능한 키워드가 하나도 없으면 0 이 아니라 null 이다.
+  // 0 으로 두면 "5,000 미만" 으로 잘못 걸러진다.
   out[brand] = {
-    total: counted.reduce(function (s, r) { return s + r.volume; }, 0),
+    total: counted.length ? counted.reduce(function (s, r) { return s + r.volume; }, 0) : null,
     counted: counted.length, no_data: rows.length - counted.length,
+    partial: rows.filter(function (r) { return r._source === 'partial'; }).length,
     keywords: rows.slice(0, 20) };
-  console.log(brand, '합산', out[brand].total, '· 집계', counted.length, '· 자료없음', out[brand].no_data);
+  console.log(brand, '합산', out[brand].total === null ? '판정불가(자료없음)' : out[brand].total,
+              '· 집계', counted.length, '· 부분', out[brand].partial, '· 자료없음', out[brand].no_data);
 }
 fs.writeFileSync(new URL('volumes.json', import.meta.url), JSON.stringify(out, null, 2));
 ```
@@ -252,7 +260,15 @@ for (var q of names) {
     await page.goto('https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&q=' +
       encodeURIComponent(q) + '&search_type=keyword_unordered', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(9000);
-    for (var i = 0; i < 12; i++) { await page.mouse.wheel(0, 4000); await page.waitForTimeout(900); }
+    // 카드 수가 더 안 늘 때까지 스크롤한다. 고정 횟수로 끊으면 과거 광고가 안 실려
+    // "한 달 몰아 세팅" 으로 잘못 보인다.
+    var prev = -1, same = 0;
+    for (var i = 0; i < 60 && same < 3; i++) {
+      await page.mouse.wheel(0, 4000); await page.waitForTimeout(900);
+      var now = await page.evaluate(function () {
+        return (document.body.innerText.match(/라이브러리 ID/g) || []).length; });
+      same = now === prev ? same + 1 : 0; prev = now;
+    }
     var r = await page.evaluate(function () {
       var t = document.body.innerText || '';
       var count = t.split('\n').map(function (s) { return s.trim(); })
@@ -279,8 +295,18 @@ for (var q of names) {
         }
       }
       copy = [...new Set(copy)].slice(0, 20);
-      return { count: count, sampled: dates.length, months: months, cards: cards.length, copy: copy };
+      return { count: count, sampled: dates.length, months: months,
+               cards: cards.length, copy: copy };
     });
+    // DOM 이 바뀌면 조용히 빈 결과가 나온다. 실패를 성공으로 착각하지 않게 여기서 끊는다.
+    if (r.cards === 0) {
+      console.log(JSON.stringify({ brand: q, error: 'ANCHOR_MISS',
+        note: '광고 카드를 못 찾았습니다. 라이브러리가 실제로 0건인지, 페이지 구조가 바뀐 것인지 사람이 확인해야 합니다.',
+        countLine: r.count }, null, 1));
+      continue;
+    }
+    // 날짜를 읽어낸 카드가 전체 카드의 절반도 안 되면 월 분포가 표본에 치우친 것이다.
+    r.months_reliable = r.sampled >= r.cards * 0.5;
     console.log(JSON.stringify({ brand: q, ...r }, null, 1));
   } catch (e) { console.log(JSON.stringify({ brand: q, error: e.message.slice(0, 80) })); }
 }
@@ -288,11 +314,25 @@ await browser.close();
 ```
 
 읽는 법 — `count`는 후보 간 **상대 비교**용, `months`는 **여러 달에 퍼지면 상시 / 한 달에 몰리면 버스트**,
-`copy`는 섹션 04 카피 카드의 재료다(광고 카드 안에서만 뽑는다). `cards`가 0이면 카피를 못 건진 것이니
-**카피 카드를 지어내지 말고** 그 사실을 적는다.
+`copy`는 섹션 04 카피 카드의 재료다(광고 카드 안에서만 뽑는다).
 
-**단서를 반드시 남긴다.** 이 검색은 브랜드명이 들어간 광고를 넓게 잡아 제휴·리셀러가 섞인다.
-모든 후보에 같은 방식을 썼으므로 상대 비교는 유효하지만 절대 건수는 **상한**이다.
+**이 숫자는 상한이다.** 검색이 브랜드명이 들어간 광고를 넓게 잡아 제휴·리셀러 광고가 섞인다.
+게다가 이 카테고리는 **인플루언서 페이지를 통한 브랜디드 콘텐츠**가 흔해서 광고주 이름으로도
+자사 광고를 갈라내지 못한다(실측 확인). 모든 후보에 같은 방식을 쓰므로 **상대 비교는 유효**하다.
+
+그래서 **50건 기준을 이 숫자로 기계적으로 자르지 않는다.**
+
+| 나온 값 | 판정 |
+|---------|------|
+| 100건 이상 | 통과 — 섞인 걸 감안해도 충분하다 |
+| **30~100건** | **사람이 라이브러리를 직접 열어 확인한다.** 이 구간은 숫자만으로 못 자른다 |
+| 30건 미만 | 탈락 — 상한값이 이미 낮으면 실제는 더 낮다 |
+
+`months_reliable` 이 `false` 면 **2개월 분산 필터를 적용하지 않는다.** 스크롤로 본 만큼만 센 것이라
+과거 광고가 안 실려 상시 집행 브랜드가 버스트로 잘못 걸릴 수 있다.
+
+`error: "ANCHOR_MISS"` 가 나오면 **광고가 0건인 게 아니라 페이지 구조가 바뀐 것일 수 있다.**
+0으로 단정하지 말고 사용자에게 라이브러리를 직접 열어 보라고 알린다.
 
 ### 1-C. 리뷰·커뮤니티 (섹션 03·05 재료)
 
@@ -346,7 +386,9 @@ await browser.close();
 
 - 브랜드별 **합산 검색량 카드**. 펼치면 파생 키워드별 검색량 표
 - **월별 트렌드 라인 차트** — 직전 연도 1~12월, 브랜드별 선 하나씩
-- 부제는 "월별 브랜드 검색 트렌드 ({연도})" · "네이버 월간 검색량 기준"
+- 부제는 **환산했을 때만** "월별 브랜드 검색 트렌드 ({연도})" · "네이버 월간 추정 검색량 기준".
+  환산하지 않았으면(키 없음·`volumes.json` 없음) **"상대지수 (0~100)"** 으로 쓰고
+  브랜드 간 절대 크기를 비교하지 말라고 주석을 붙인다
 - **계산식·API 이름을 화면에 쓰지 않는다**
 
 ### 02. 시장 분석
@@ -472,7 +514,7 @@ await browser.close();
 - **못 채운 칸** — 어느 브랜드의 무엇이 비었는지
 - **한 출처에서만 나온 값** — 교차 확인이 안 된 것
 - **기준 시점** — 언제까지의 정보로 만든 분석인지
-- **빼먹은 섹션** — API 키가 없어 01 을 뺐다면 그 사실
+- **01 섹션 상태** — API 키가 없었다면 `자료 없음` 으로 뒀다는 사실 (섹션 자체를 빼지는 않는다)
 
 ## 하지 않는 것
 
